@@ -15,7 +15,7 @@ A standalone Windows and macOS desktop app for authenticating multiple OpenAI ac
 
 ## Current status
 
-This repository contains the first working implementation scaffold and UI. The React production build is validated in CI, and Windows/macOS jobs run Rust compilation checks.
+This repository contains the first working implementation scaffold and UI. The React type-check and production build have been validated locally. GitHub Actions workflows are included for Windows and macOS Rust compilation and installer builds; hosted jobs must be able to start under the repository's Actions billing settings before those checks can report results.
 
 OpenAI does not currently document a public quota API or third-party desktop OAuth registration flow for this use case. The app therefore uses the OAuth client and internal usage endpoint used by Codex clients. Those pieces are intentionally isolated so they can be updated without changing the interface or Paseo integration contract.
 
