@@ -184,10 +184,15 @@ fn account_path(data_dir: &Path) -> PathBuf {
 
 fn read_account_file(data_dir: &Path) -> Result<Vec<Account>, StoreError> {
     let path = account_path(data_dir);
-    if !path.exists() {
+    let backup = data_dir.join("accounts.json.bak");
+    let source = if path.exists() {
+        path
+    } else if backup.exists() {
+        backup
+    } else {
         return Ok(Vec::new());
-    }
-    let raw = fs::read_to_string(path).map_err(|error| StoreError::Io(error.to_string()))?;
+    };
+    let raw = fs::read_to_string(source).map_err(|error| StoreError::Io(error.to_string()))?;
     let parsed: AccountFile =
         serde_json::from_str(&raw).map_err(|error| StoreError::Invalid(error.to_string()))?;
     Ok(parsed.accounts)
@@ -226,7 +231,19 @@ fn write_account_file(data_dir: &Path, accounts: &[Account]) -> Result<(), Store
         let backup = data_dir.join("accounts.json.bak");
         let _ = fs::copy(&path, backup);
     }
-    fs::rename(temp, path).map_err(|error| StoreError::Io(error.to_string()))
+    match fs::rename(&temp, &path) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::AlreadyExists | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            fs::remove_file(&path).map_err(|error| StoreError::Io(error.to_string()))?;
+            fs::rename(&temp, &path).map_err(|error| StoreError::Io(error.to_string()))
+        }
+        Err(error) => Err(StoreError::Io(error.to_string())),
+    }
 }
 
 #[cfg(test)]
