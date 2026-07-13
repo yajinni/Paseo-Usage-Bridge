@@ -1,0 +1,53 @@
+select,
+textarea {
+  font: inherit;
+}
+
+select.text-input {
+  appearance: none;
+  padding-right: 38px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 18px,
+    calc(100% - 12px) 18px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select.text-input option {
+  background: #171b19;
+  color: var(--text);
+}
+
+.field-spaced {
+  margin-top: 14px;
+}
+
+.secret-input {
+  min-height: 80px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.credential-note {
+  margin-top: 9px;
+  color: var(--muted-2);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.modal-error {
+  margin-top: 12px;
+}
+
+.inspector-status {
+  flex-wrap: wrap;
+}
+
+.usage-grid .usage-card.wide {
+  min-height: 134px;
+}
