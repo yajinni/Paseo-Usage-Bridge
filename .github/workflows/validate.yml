@@ -37,5 +37,25 @@ jobs:
           workspaces: src-tauri
       - run: npm install
       - run: npm run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Run Rust tests and capture output
+        id: cargo_test
+        shell: bash
+        continue-on-error: true
+        run: |
+          set +e
+          cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | tee cargo-test.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload Rust test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-test-${{ matrix.os }}
+          path: cargo-test.log
+          if-no-files-found: error
+      - name: Fail when Rust tests fail
+        if: steps.cargo_test.outputs.status != '0'
+        shell: bash
+        run: exit 1
       - run: cargo check --manifest-path src-tauri/Cargo.toml
