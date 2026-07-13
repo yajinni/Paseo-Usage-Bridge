@@ -6,7 +6,7 @@ mod store;
 mod usage;
 
 use crate::{
-    model::{Account, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus},
+    model::{Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus},
     state::AppState,
     store::{load_or_create_bridge_token, rotate_bridge_token},
 };
@@ -14,9 +14,10 @@ use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager, State, WindowEvent,
+    AppHandle, Manager, State, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 async fn get_dashboard_snapshot(state: State<'_, Arc<AppState>>) -> Result<DashboardSnapshot, String> {
@@ -80,6 +81,53 @@ fn regenerate_bridge_token(state: State<'_, Arc<AppState>>) -> Result<BridgeInfo
     Ok(bridge_info(state.inner().as_ref()))
 }
 
+#[tauri::command]
+async fn check_for_app_update(app: AppHandle) -> Result<AppUpdateStatus, String> {
+    let current_version = app.package_info().version.to_string();
+    let update = app
+        .updater()
+        .map_err(|error| format!("Unable to initialize the updater: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Unable to check for updates: {error}"))?;
+
+    Ok(match update {
+        Some(update) => AppUpdateStatus {
+            current_version,
+            available: true,
+            available_version: Some(update.version.to_string()),
+            date: update.date.map(|date| date.to_string()),
+            body: update.body,
+        },
+        None => AppUpdateStatus {
+            current_version,
+            available: false,
+            available_version: None,
+            date: None,
+            body: None,
+        },
+    })
+}
+
+#[tauri::command]
+async fn install_app_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("Unable to initialize the updater: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Unable to check for updates: {error}"))?
+        .ok_or_else(|| "No newer release is available.".to_string())?;
+
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("Unable to install the update: {error}"))?;
+
+    app.restart();
+    Ok(())
+}
+
 fn bridge_info(state: &AppState) -> BridgeInfo {
     let runtime = state.api_runtime.read();
     BridgeInfo {
@@ -100,6 +148,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
@@ -167,6 +216,8 @@ pub fn run() {
             rename_account,
             remove_account,
             regenerate_bridge_token,
+            check_for_app_update,
+            install_app_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Paseo Usage Bridge");
