@@ -86,29 +86,24 @@ pub async fn start_login(
     if provider == Provider::OpencodeGo {
         return Err("OpenCode Go uses a workspace ID and console session cookie instead of browser OAuth.".into());
     }
+    if app
+        .pending_login
+        .read()
+        .as_ref()
+        .is_some_and(|login| login.status == "waiting")
     {
-        let pending = app.pending_login.read();
-        if pending
-            .as_ref()
-            .is_some_and(|login| login.status == "waiting")
-        {
-            return Err("Another provider login is already in progress.".into());
-        }
+        return Err("Another provider login is already in progress.".into());
     }
 
     let (listener, port) = bind_callback_port(&provider).await?;
     let verifier = random_base64(32);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let oauth_state = random_base64(24);
+    let expected_state = random_base64(24);
     let attempt_id = Uuid::new_v4().to_string();
     let redirect_uri = redirect_uri(&provider, port);
+    let authorization_url =
+        build_authorization_url(&provider, &redirect_uri, &challenge, &expected_state)?;
     let expires_at = (Utc::now() + Duration::minutes(LOGIN_TIMEOUT_MINUTES)).to_rfc3339();
-    let authorization_url = build_authorization_url(
-        &provider,
-        &redirect_uri,
-        &challenge,
-        &oauth_state,
-    )?;
 
     *app.pending_login.write() = Some(LoginStatus {
         attempt_id: attempt_id.clone(),
@@ -124,7 +119,7 @@ pub async fn start_login(
         label,
         provider,
         verifier,
-        expected_state: oauth_state,
+        expected_state,
         redirect_uri,
         shutdown: Arc::new(tokio::sync::Mutex::new(Some(shutdown_tx))),
     });
@@ -136,12 +131,12 @@ pub async fn start_login(
 
     let server_context = context.clone();
     tokio::spawn(async move {
-        let result = axum::serve(listener, router)
+        if let Err(error) = axum::serve(listener, router)
             .with_graceful_shutdown(async {
                 let _ = shutdown_rx.await;
             })
-            .await;
-        if let Err(error) = result {
+            .await
+        {
             fail_login(
                 &server_context.app.pending_login,
                 &server_context.attempt_id,
@@ -156,7 +151,7 @@ pub async fn start_login(
             (LOGIN_TIMEOUT_MINUTES * 60) as u64,
         ))
         .await;
-        let should_timeout = timeout_context
+        let waiting = timeout_context
             .app
             .pending_login
             .read()
@@ -164,7 +159,7 @@ pub async fn start_login(
             .is_some_and(|login| {
                 login.attempt_id == timeout_context.attempt_id && login.status == "waiting"
             });
-        if should_timeout {
+        if waiting {
             fail_login(
                 &timeout_context.app.pending_login,
                 &timeout_context.attempt_id,
@@ -252,6 +247,20 @@ async fn complete_callback(
     } else {
         context.label.trim().to_string()
     };
+    let provider_account_id = identity.account_id.clone().or_else(|| {
+        duplicate
+            .as_ref()
+            .and_then(|account| account.provider_account_id.clone())
+    });
+    let chatgpt_account_id = if context.provider == Provider::Openai {
+        provider_account_id.clone().or_else(|| {
+            duplicate
+                .as_ref()
+                .and_then(|account| account.chatgpt_account_id.clone())
+        })
+    } else {
+        None
+    };
     let account = Account {
         id: duplicate
             .as_ref()
@@ -262,20 +271,8 @@ async fn complete_callback(
         email: identity
             .email
             .or_else(|| duplicate.as_ref().and_then(|account| account.email.clone())),
-        provider_account_id: identity.account_id.or_else(|| {
-            duplicate
-                .as_ref()
-                .and_then(|account| account.provider_account_id.clone())
-        }),
-        chatgpt_account_id: if context.provider == Provider::Openai {
-            identity.account_id.or_else(|| {
-                duplicate
-                    .as_ref()
-                    .and_then(|account| account.chatgpt_account_id.clone())
-            })
-        } else {
-            None
-        },
+        provider_account_id,
+        chatgpt_account_id,
         plan: identity
             .plan
             .or_else(|| duplicate.as_ref().and_then(|account| account.plan.clone())),
@@ -350,10 +347,19 @@ async fn exchange_openai(
     let id_claims = tokens.id_token.as_deref().and_then(decode_claims);
     let mut claims = merge_claims(access_claims, id_claims);
     if claims.email.is_none() {
-        claims.email = fetch_json(&context.app, &format!("{OPENAI_ISSUER}/userinfo"), &tokens.access_token)
-            .await
-            .ok()
-            .and_then(|value| value.get("email").and_then(Value::as_str).map(str::to_string));
+        claims.email = fetch_json(
+            &context.app,
+            &format!("{OPENAI_ISSUER}/userinfo"),
+            &tokens.access_token,
+        )
+        .await
+        .ok()
+        .and_then(|value| {
+            value
+                .get("email")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        });
     }
     let expires_at = claims
         .expires_at
@@ -385,9 +391,9 @@ async fn exchange_anthropic(
             "grant_type": "authorization_code",
             "client_id": ANTHROPIC_CLIENT_ID,
             "code": code,
-            "state": context.expected_state,
-            "redirect_uri": context.redirect_uri,
-            "code_verifier": context.verifier,
+            "state": context.expected_state.clone(),
+            "redirect_uri": context.redirect_uri.clone(),
+            "code_verifier": context.verifier.clone(),
         }))
         .send()
         .await
@@ -430,7 +436,8 @@ async fn exchange_anthropic(
             access_token: tokens.access_token,
             refresh_token,
             id_token: tokens.id_token,
-            expires_at: Utc::now().timestamp_millis() + tokens.expires_in.unwrap_or(3600) * 1000,
+            expires_at: Utc::now().timestamp_millis()
+                + tokens.expires_in.unwrap_or(3600) * 1000,
         }),
         identity,
     ))
@@ -462,10 +469,9 @@ async fn exchange_antigravity(
     }
     let tokens: OAuthTokenResponse = serde_json::from_str(&body)
         .map_err(|error| format!("Invalid Google token response: {error}"))?;
-    let refresh_token = tokens
-        .refresh_token
-        .clone()
-        .ok_or_else(|| "Google did not return a refresh token. Revoke access and try again.".to_string())?;
+    let refresh_token = tokens.refresh_token.clone().ok_or_else(|| {
+        "Google did not return a refresh token. Revoke access and try again.".to_string()
+    })?;
     let profile = fetch_json(
         &context.app,
         "https://www.googleapis.com/oauth2/v2/userinfo",
@@ -489,7 +495,8 @@ async fn exchange_antigravity(
             access_token: tokens.access_token,
             refresh_token,
             id_token: tokens.id_token,
-            expires_at: Utc::now().timestamp_millis() + tokens.expires_in.unwrap_or(3600) * 1000,
+            expires_at: Utc::now().timestamp_millis()
+                + tokens.expires_in.unwrap_or(3600) * 1000,
         }),
         identity,
     ))
@@ -520,8 +527,8 @@ fn build_authorization_url(
             Ok(url.to_string())
         }
         Provider::Anthropic => {
-            let mut url = Url::parse("https://claude.ai/oauth/authorize")
-                .map_err(|error| error.to_string())?;
+            let mut url =
+                Url::parse("https://claude.ai/oauth/authorize").map_err(|error| error.to_string())?;
             url.query_pairs_mut()
                 .append_pair("code", "true")
                 .append_pair("client_id", ANTHROPIC_CLIENT_ID)
@@ -573,7 +580,7 @@ async fn bind_callback_port(provider: &Provider) -> Result<(TcpListener, u16), S
         Provider::Antigravity => (11451..=11455).collect(),
         Provider::OpencodeGo => Vec::new(),
     };
-    for port in ports.iter().copied() {
+    for port in ports {
         match TcpListener::bind(("127.0.0.1", port)).await {
             Ok(listener) => return Ok((listener, port)),
             Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => continue,
@@ -624,7 +631,8 @@ pub fn decode_claims(token: &str) -> Option<TokenClaims> {
     let decoded = URL_SAFE_NO_PAD.decode(segment).ok()?;
     let value: Value = serde_json::from_slice(&decoded).ok()?;
     let auth = value.get("https://api.openai.com/auth");
-    let email = string_at(&value, "email").or_else(|| auth.and_then(|value| string_at(value, "email")));
+    let email = string_at(&value, "email")
+        .or_else(|| auth.and_then(|value| string_at(value, "email")));
     let account_id = auth
         .and_then(|value| string_at(value, "chatgpt_account_id"))
         .or_else(|| string_at(&value, "chatgpt_account_id"));
