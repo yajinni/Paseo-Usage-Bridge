@@ -19,9 +19,7 @@ use tauri::{
 use tauri_plugin_autostart::MacosLauncher;
 
 #[tauri::command]
-async fn get_dashboard_snapshot(
-    state: State<'_, Arc<AppState>>,
-) -> Result<DashboardSnapshot, String> {
+async fn get_dashboard_snapshot(state: State<'_, Arc<AppState>>) -> Result<DashboardSnapshot, String> {
     Ok(DashboardSnapshot {
         accounts: state.store.list(),
         bridge: bridge_info(state.inner().as_ref()),
@@ -29,10 +27,7 @@ async fn get_dashboard_snapshot(
 }
 
 #[tauri::command]
-async fn start_login(
-    state: State<'_, Arc<AppState>>,
-    label: String,
-) -> Result<LoginStart, String> {
+async fn start_login(state: State<'_, Arc<AppState>>, label: String) -> Result<LoginStart, String> {
     let label = label.trim();
     if label.is_empty() {
         return Err("Account label is required.".into());
@@ -44,18 +39,12 @@ async fn start_login(
 }
 
 #[tauri::command]
-fn get_login_status(
-    state: State<'_, Arc<AppState>>,
-    attempt_id: String,
-) -> Result<LoginStatus, String> {
+fn get_login_status(state: State<'_, Arc<AppState>>, attempt_id: String) -> Result<LoginStatus, String> {
     oauth::login_status(state.inner().as_ref(), &attempt_id)
 }
 
 #[tauri::command]
-async fn refresh_account(
-    state: State<'_, Arc<AppState>>,
-    account_id: String,
-) -> Result<Account, String> {
+async fn refresh_account(state: State<'_, Arc<AppState>>, account_id: String) -> Result<Account, String> {
     usage::refresh_account(state.inner().clone(), &account_id).await
 }
 
@@ -65,11 +54,7 @@ async fn refresh_all(state: State<'_, Arc<AppState>>) -> Result<Vec<Account>, St
 }
 
 #[tauri::command]
-fn rename_account(
-    state: State<'_, Arc<AppState>>,
-    account_id: String,
-    label: String,
-) -> Result<Account, String> {
+fn rename_account(state: State<'_, Arc<AppState>>, account_id: String, label: String) -> Result<Account, String> {
     let label = label.trim();
     if label.is_empty() {
         return Err("Account label is required.".into());
@@ -84,14 +69,8 @@ fn rename_account(
 }
 
 #[tauri::command]
-fn remove_account(
-    state: State<'_, Arc<AppState>>,
-    account_id: String,
-) -> Result<(), String> {
-    state
-        .store
-        .remove(&account_id)
-        .map_err(|error| error.to_string())
+fn remove_account(state: State<'_, Arc<AppState>>, account_id: String) -> Result<(), String> {
+    state.store.remove(&account_id).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -130,7 +109,8 @@ pub fn run() {
             let token = load_or_create_bridge_token()
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             let state = Arc::new(
-                AppState::new(data_dir, token).map_err(std::io::Error::other)?,
+                AppState::new(data_dir, token)
+                    .map_err(std::io::Error::other)?,
             );
             app.manage(state.clone());
             tauri::async_runtime::spawn(bridge_api::run(state.clone()));
@@ -142,13 +122,7 @@ pub fn run() {
                 }
             });
 
-            let show = MenuItem::with_id(
-                app,
-                "show",
-                "Open Paseo Usage Bridge",
-                true,
-                None::<&str>,
-            )?;
+            let show = MenuItem::with_id(app, "show", "Open Paseo Usage Bridge", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             let mut tray = TrayIconBuilder::new()
@@ -171,6 +145,9 @@ pub fn run() {
             tray.build(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
+                if std::env::args().any(|argument| argument == "--hidden") {
+                    let _ = window.hide();
+                }
                 let window_for_event = window.clone();
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
