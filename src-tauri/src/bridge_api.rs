@@ -72,9 +72,14 @@ async fn usage(State(app): State<Arc<AppState>>, headers: HeaderMap) -> impl Int
             PublicUsageAccount {
                 id: account.id,
                 label: account.label,
+                provider: account.provider,
                 email: account.email,
+                provider_account_id: account
+                    .provider_account_id
+                    .or(account.chatgpt_account_id),
                 plan: account.plan,
                 status: status.into(),
+                source: usage.as_ref().map(|usage| usage.source.clone()),
                 windows: usage
                     .as_ref()
                     .map(|usage| usage.windows.clone())
