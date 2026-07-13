@@ -105,6 +105,16 @@ pub struct DashboardSnapshot {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AppUpdateStatus {
+    pub current_version: String,
+    pub available: bool,
+    pub available_version: Option<String>,
+    pub date: Option<String>,
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicUsageAccount {
     pub id: String,
     pub label: String,
