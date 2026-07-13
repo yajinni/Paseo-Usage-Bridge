@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Paseo Usage Bridge",
+  "version": "0.1.0",
+  "identifier": "com.yajinni.paseousagebridge",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Paseo Usage Bridge",
+        "label": "main",
+        "width": 1440,
+        "height": 850,
+        "minWidth": 960,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "theme": "Dark"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Monitor multiple Codex subscription usage limits",
+    "longDescription": "A standalone Windows and macOS desktop app for authenticating multiple OpenAI accounts, monitoring Codex subscription usage, and exposing sanitized quota data to Paseo over localhost."
+  }
+}
