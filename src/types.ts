@@ -1,7 +1,9 @@
+export type Provider = "openai" | "anthropic" | "antigravity" | "opencode_go";
+
 export type UsageFreshness = "live" | "stale" | "unavailable" | "auth_required";
 
 export interface UsageWindow {
-  id: "session" | "weekly" | "code_review" | string;
+  id: string;
   label: string;
   usedPercent: number | null;
   remainingPercent: number | null;
@@ -17,13 +19,15 @@ export interface UsageSnapshot {
   unlimitedCredits: boolean;
   fetchedAt: string;
   freshness: UsageFreshness;
-  source: "wham";
+  source: string;
 }
 
 export interface Account {
   id: string;
   label: string;
+  provider: Provider;
   email: string | null;
+  providerAccountId: string | null;
   chatgptAccountId: string | null;
   plan: string | null;
   createdAt: string;
@@ -31,6 +35,18 @@ export interface Account {
   lastUsage: UsageSnapshot | null;
   lastError: string | null;
   authRequired: boolean;
+}
+
+export interface BridgeInfo {
+  endpoint: string;
+  token: string;
+  running: boolean;
+  error: string | null;
+}
+
+export interface DashboardSnapshot {
+  accounts: Account[];
+  bridge: BridgeInfo;
 }
 
 export interface LoginStart {
@@ -46,22 +62,10 @@ export interface LoginStatus {
   account: Account | null;
 }
 
-export interface BridgeInfo {
-  endpoint: string;
-  token: string;
-  running: boolean;
-  error: string | null;
-}
-
 export interface AppUpdateStatus {
   currentVersion: string;
   available: boolean;
   availableVersion: string | null;
   date: string | null;
   body: string | null;
-}
-
-export interface DashboardSnapshot {
-  accounts: Account[];
-  bridge: BridgeInfo;
 }
