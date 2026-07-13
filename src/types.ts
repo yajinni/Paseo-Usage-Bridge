@@ -53,6 +53,14 @@ export interface BridgeInfo {
   error: string | null;
 }
 
+export interface AppUpdateStatus {
+  currentVersion: string;
+  available: boolean;
+  availableVersion: string | null;
+  date: string | null;
+  body: string | null;
+}
+
 export interface DashboardSnapshot {
   accounts: Account[];
   bridge: BridgeInfo;
