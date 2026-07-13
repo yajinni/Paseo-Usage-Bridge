@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 axum = "0.8"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 parking_lot = "0.12"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
