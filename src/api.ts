@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus } from "./types";
+import type { Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus } from "./types";
 
 export const bridgeApi = {
   snapshot: () => invoke<DashboardSnapshot>("get_dashboard_snapshot"),
@@ -11,4 +11,6 @@ export const bridgeApi = {
     invoke<Account>("rename_account", { accountId, label }),
   removeAccount: (accountId: string) => invoke<void>("remove_account", { accountId }),
   regenerateToken: () => invoke<BridgeInfo>("regenerate_bridge_token"),
+  checkForUpdate: () => invoke<AppUpdateStatus>("check_for_app_update"),
+  installUpdate: () => invoke<void>("install_app_update"),
 };
