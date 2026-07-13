@@ -1,5 +1,7 @@
 # Paseo Usage Bridge
 
+[![Validate](https://github.com/yajinni/Paseo-Usage-Bridge/actions/workflows/validate.yml/badge.svg)](https://github.com/yajinni/Paseo-Usage-Bridge/actions/workflows/validate.yml)
+
 A standalone Windows and macOS desktop app for authenticating multiple OpenAI accounts, displaying Codex subscription usage, and optionally exposing sanitized usage data to Paseo over localhost.
 
 ## What it does
@@ -15,7 +17,7 @@ A standalone Windows and macOS desktop app for authenticating multiple OpenAI ac
 
 ## Current status
 
-This repository contains the first working implementation scaffold and UI. The React type-check and production build have been validated locally. GitHub Actions workflows are included for Windows and macOS Rust compilation and installer builds; hosted jobs must be able to start under the repository's Actions billing settings before those checks can report results.
+This repository contains the first working implementation scaffold and UI. The React type-check and production build have been validated locally. GitHub Actions validates the frontend and performs Rust checks on Windows and macOS. Installer builds are available through the manual `Build desktop installers` workflow.
 
 OpenAI does not currently document a public quota API or third-party desktop OAuth registration flow for this use case. The app therefore uses the OAuth client and internal usage endpoint used by Codex clients. Those pieces are intentionally isolated so they can be updated without changing the interface or Paseo integration contract.
 
