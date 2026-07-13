@@ -59,11 +59,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           JOB_STATUS: ${{ job.status }}
-          RUNNER_NAME: ${{ matrix.os }}
+          TARGET_OS: ${{ matrix.os }}
         run: |
           state="$JOB_STATUS"
           if [ "$state" = "cancelled" ]; then state="error"; fi
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
             -f state="$state" \
-            -f context="validate/desktop-${RUNNER_NAME}" \
-            -f description="Rust tests and checks on ${RUNNER_NAME}"
+            -f context="validate/desktop-${TARGET_OS}" \
+            -f description="Rust tests and checks on ${TARGET_OS}"
