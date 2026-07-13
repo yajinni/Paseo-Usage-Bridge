@@ -202,15 +202,18 @@ async fn refresh_oauth_secret(
         .send()
         .await
         .map_err(|error| UsageError::Transient(format!("Token refresh failed: {error}")))?;
-    if response.status() == StatusCode::UNAUTHORIZED
-        || response.status() == StatusCode::FORBIDDEN
-    {
-        return Err(UsageError::Auth);
-    }
-    if !response.status().is_success() {
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        if status == StatusCode::UNAUTHORIZED
+            || status == StatusCode::FORBIDDEN
+            || (status == StatusCode::BAD_REQUEST
+                && body.to_ascii_lowercase().contains("invalid_grant"))
+        {
+            return Err(UsageError::Auth);
+        }
         return Err(UsageError::Transient(format!(
-            "Token refresh returned {}.",
-            response.status()
+            "Token refresh returned {status}."
         )));
     }
     let tokens: RefreshResponse = response.json().await.map_err(|error| {
