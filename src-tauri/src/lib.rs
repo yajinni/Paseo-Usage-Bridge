@@ -1,16 +1,20 @@
 mod bridge_api;
 mod model;
 mod oauth;
+mod providers;
 mod state;
 mod store;
 mod usage;
 
 use crate::{
-    model::{Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus},
+    model::{
+        now_rfc3339, Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, LoginStart,
+        LoginStatus, OpenCodeGoSecret, Provider, ProviderSecret,
+    },
     state::AppState,
-    store::{load_or_create_bridge_token, rotate_bridge_token},
+    store::{load_or_create_bridge_token, rotate_bridge_token, save_provider_secret},
 };
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -18,6 +22,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_updater::UpdaterExt;
+use uuid::Uuid;
 
 #[tauri::command]
 async fn get_dashboard_snapshot(state: State<'_, Arc<AppState>>) -> Result<DashboardSnapshot, String> {
@@ -28,15 +33,73 @@ async fn get_dashboard_snapshot(state: State<'_, Arc<AppState>>) -> Result<Dashb
 }
 
 #[tauri::command]
-async fn start_login(state: State<'_, Arc<AppState>>, label: String) -> Result<LoginStart, String> {
-    let label = label.trim();
-    if label.is_empty() {
-        return Err("Account label is required.".into());
+async fn start_login(
+    state: State<'_, Arc<AppState>>,
+    label: String,
+    provider: String,
+) -> Result<LoginStart, String> {
+    let label = validate_label(&label)?;
+    let provider = Provider::from_str(&provider)?;
+    oauth::start_login(state.inner().clone(), label, provider).await
+}
+
+#[tauri::command]
+async fn add_opencode_go_account(
+    state: State<'_, Arc<AppState>>,
+    label: String,
+    workspace_id: String,
+    auth_cookie: String,
+) -> Result<Account, String> {
+    let label = validate_label(&label)?;
+    let workspace_id = workspace_id.trim();
+    if workspace_id.is_empty() || workspace_id.chars().count() > 160 {
+        return Err("A valid OpenCode workspace ID is required.".into());
     }
-    if label.chars().count() > 80 {
-        return Err("Account label must be 80 characters or fewer.".into());
+    let auth_cookie = providers::opencode_go::normalize_cookie(&auth_cookie);
+    if auth_cookie.is_empty() || auth_cookie.chars().count() > 4096 {
+        return Err("A valid OpenCode console auth cookie is required.".into());
     }
-    oauth::start_login(state.inner().clone(), label.to_string()).await
+
+    let provider = Provider::OpencodeGo;
+    let duplicate = state
+        .store
+        .find_duplicate(&provider, Some(workspace_id), None);
+    let now = now_rfc3339();
+    let account = Account {
+        id: duplicate
+            .as_ref()
+            .map(|account| account.id.clone())
+            .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        label,
+        provider,
+        email: duplicate.as_ref().and_then(|account| account.email.clone()),
+        provider_account_id: Some(workspace_id.to_string()),
+        chatgpt_account_id: None,
+        plan: Some("OpenCode Go".into()),
+        created_at: duplicate
+            .as_ref()
+            .map(|account| account.created_at.clone())
+            .unwrap_or_else(|| now.clone()),
+        updated_at: now,
+        last_usage: duplicate
+            .as_ref()
+            .and_then(|account| account.last_usage.clone()),
+        last_error: None,
+        auth_required: false,
+    };
+    save_provider_secret(
+        &account.id,
+        &ProviderSecret::OpencodeGo(OpenCodeGoSecret {
+            workspace_id: workspace_id.to_string(),
+            auth_cookie,
+        }),
+    )
+    .map_err(|error| error.to_string())?;
+    let account = state
+        .store
+        .upsert(account)
+        .map_err(|error| error.to_string())?;
+    usage::refresh_account(state.inner().clone(), &account.id).await
 }
 
 #[tauri::command]
@@ -56,16 +119,10 @@ async fn refresh_all(state: State<'_, Arc<AppState>>) -> Result<Vec<Account>, St
 
 #[tauri::command]
 fn rename_account(state: State<'_, Arc<AppState>>, account_id: String, label: String) -> Result<Account, String> {
-    let label = label.trim();
-    if label.is_empty() {
-        return Err("Account label is required.".into());
-    }
-    if label.chars().count() > 80 {
-        return Err("Account label must be 80 characters or fewer.".into());
-    }
+    let label = validate_label(&label)?;
     state
         .store
-        .mutate(&account_id, |account| account.label = label.to_string())
+        .mutate(&account_id, |account| account.label = label)
         .map_err(|error| error.to_string())
 }
 
@@ -126,6 +183,17 @@ async fn install_app_update(app: AppHandle) -> Result<(), String> {
 
     app.restart();
     Ok(())
+}
+
+fn validate_label(label: &str) -> Result<String, String> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Err("Account label is required.".into());
+    }
+    if label.chars().count() > 80 {
+        return Err("Account label must be 80 characters or fewer.".into());
+    }
+    Ok(label.to_string())
 }
 
 fn bridge_info(state: &AppState) -> BridgeInfo {
@@ -210,6 +278,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_dashboard_snapshot,
             start_login,
+            add_opencode_go_account,
             get_login_status,
             refresh_account,
             refresh_all,
