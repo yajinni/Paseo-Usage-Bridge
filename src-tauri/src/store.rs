@@ -1,4 +1,4 @@
-use crate::model::{now_rfc3339, Account, OAuthSecret};
+use crate::model::{now_rfc3339, Account, OAuthSecret, Provider, ProviderSecret};
 use keyring::Entry;
 use parking_lot::RwLock;
 use rand::{distributions::Alphanumeric, Rng};
@@ -94,14 +94,22 @@ impl AccountStore {
         Ok(())
     }
 
-    pub fn find_duplicate(&self, account_id: Option<&str>, email: Option<&str>) -> Option<Account> {
+    pub fn find_duplicate(
+        &self,
+        provider: &Provider,
+        account_id: Option<&str>,
+        email: Option<&str>,
+    ) -> Option<Account> {
         self.accounts
             .read()
             .iter()
             .find(|account| {
+                if &account.provider != provider {
+                    return false;
+                }
                 account_id
                     .filter(|value| !value.is_empty())
-                    .is_some_and(|value| account.chatgpt_account_id.as_deref() == Some(value))
+                    .is_some_and(|value| account.effective_account_id() == Some(value))
                     || email
                         .filter(|value| !value.is_empty())
                         .is_some_and(|value| {
@@ -115,7 +123,7 @@ impl AccountStore {
     }
 }
 
-pub fn save_secret(account_id: &str, secret: &OAuthSecret) -> Result<(), StoreError> {
+pub fn save_provider_secret(account_id: &str, secret: &ProviderSecret) -> Result<(), StoreError> {
     let entry = Entry::new(CREDENTIAL_SERVICE, &format!("account:{account_id}"))
         .map_err(|error| StoreError::Credential(error.to_string()))?;
     let payload =
@@ -125,13 +133,23 @@ pub fn save_secret(account_id: &str, secret: &OAuthSecret) -> Result<(), StoreEr
         .map_err(|error| StoreError::Credential(error.to_string()))
 }
 
-pub fn load_secret(account_id: &str) -> Result<OAuthSecret, StoreError> {
+pub fn load_provider_secret(account_id: &str) -> Result<ProviderSecret, StoreError> {
     let entry = Entry::new(CREDENTIAL_SERVICE, &format!("account:{account_id}"))
         .map_err(|error| StoreError::Credential(error.to_string()))?;
     let payload = entry
         .get_password()
         .map_err(|error| StoreError::Credential(error.to_string()))?;
-    serde_json::from_str(&payload).map_err(|error| StoreError::Invalid(error.to_string()))
+
+    match serde_json::from_str::<ProviderSecret>(&payload) {
+        Ok(secret) => Ok(secret),
+        Err(provider_error) => serde_json::from_str::<OAuthSecret>(&payload)
+            .map(ProviderSecret::Openai)
+            .map_err(|legacy_error| {
+                StoreError::Invalid(format!(
+                    "unable to decode provider credentials ({provider_error}); legacy credentials also failed ({legacy_error})"
+                ))
+            }),
+    }
 }
 
 pub fn delete_secret(account_id: &str) -> Result<(), StoreError> {
@@ -200,7 +218,7 @@ fn read_account_file(data_dir: &Path) -> Result<Vec<Account>, StoreError> {
 
 fn write_account_file(data_dir: &Path, accounts: &[Account]) -> Result<(), StoreError> {
     let file = AccountFile {
-        version: 1,
+        version: 2,
         accounts: accounts.to_vec(),
     };
     let payload =
@@ -260,7 +278,9 @@ mod tests {
             .upsert(Account {
                 id: "one".into(),
                 label: "Main".into(),
+                provider: Provider::Openai,
                 email: Some("main@example.com".into()),
+                provider_account_id: Some("account-1".into()),
                 chatgpt_account_id: Some("account-1".into()),
                 plan: Some("plus".into()),
                 created_at: now.clone(),
@@ -273,5 +293,28 @@ mod tests {
         let reopened = AccountStore::load(dir.path().to_path_buf()).unwrap();
         assert_eq!(reopened.list().len(), 1);
         assert_eq!(reopened.list()[0].label, "Main");
+        assert_eq!(reopened.list()[0].provider, Provider::Openai);
+    }
+
+    #[test]
+    fn legacy_account_defaults_to_openai() {
+        let raw = r#"{
+          "version": 1,
+          "accounts": [{
+            "id": "legacy",
+            "label": "Legacy",
+            "email": null,
+            "chatgptAccountId": "acct",
+            "plan": "plus",
+            "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z",
+            "lastUsage": null,
+            "lastError": null,
+            "authRequired": false
+          }]
+        }"#;
+        let parsed: AccountFile = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.accounts[0].provider, Provider::Openai);
+        assert_eq!(parsed.accounts[0].effective_account_id(), Some("acct"));
     }
 }
