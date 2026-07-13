@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   frontend:
@@ -19,6 +20,19 @@ jobs:
       - run: npm install
       - run: npm run check
       - run: npm run build
+      - name: Publish frontend validation status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          state="$JOB_STATUS"
+          if [ "$state" = "cancelled" ]; then state="error"; fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context="validate/frontend" \
+            -f description="Frontend type-check and production build"
 
   desktop-rust:
     strategy:
@@ -39,3 +53,17 @@ jobs:
       - run: npm run build
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Publish desktop validation status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          RUNNER_NAME: ${{ matrix.os }}
+        run: |
+          state="$JOB_STATUS"
+          if [ "$state" = "cancelled" ]; then state="error"; fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context="validate/desktop-${RUNNER_NAME}" \
+            -f description="Rust tests and checks on ${RUNNER_NAME}"
