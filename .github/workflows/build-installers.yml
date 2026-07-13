@@ -1,23 +1,26 @@
-name: Build desktop installers
+name: Publish desktop release
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  publish:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            artifact: windows-bundle
+            args: ""
+            apple_signing_identity: ""
           - os: macos-15
-            artifact: macos-apple-silicon-bundle
+            args: ""
+            apple_signing_identity: "-"
           - os: macos-15-intel
-            artifact: macos-intel-bundle
+            args: ""
+            apple_signing_identity: "-"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,9 +32,17 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm install
-      - run: npm run tauri:build
-      - uses: actions/upload-artifact@v4
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
         with:
-          name: ${{ matrix.artifact }}
-          path: src-tauri/target/release/bundle/**
-          if-no-files-found: error
+          tagName: v__VERSION__
+          releaseName: Paseo Usage Bridge v__VERSION__
+          releaseBody: |
+            Download the Windows installer or the macOS build for your processor from the assets below.
+
+            These builds are not yet backed by paid platform signing certificates. Windows and macOS may display an unverified-publisher warning. The macOS builds use an ad-hoc signature so Apple Silicon downloads are launchable after approval in Privacy & Security.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
