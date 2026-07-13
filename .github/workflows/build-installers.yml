@@ -14,9 +14,9 @@ jobs:
         include:
           - os: windows-latest
             artifact: windows-bundle
-          - os: macos-14
+          - os: macos-15
             artifact: macos-apple-silicon-bundle
-          - os: macos-13
+          - os: macos-15-intel
             artifact: macos-intel-bundle
     runs-on: ${{ matrix.os }}
     steps:
