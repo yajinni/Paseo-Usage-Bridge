@@ -16,9 +16,12 @@ import {
   TrashIcon,
   UsersIcon,
 } from "./icons";
-import type { Account, BridgeInfo, DashboardSnapshot, UsageWindow } from "./types";
+import type { Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, UsageWindow } from "./types";
 
 type Section = "accounts" | "integration" | "settings";
+type UpdateBusy = "checking" | "installing" | null;
+
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 function getWindow(account: Account | null, id: string): UsageWindow | null {
   return account?.lastUsage?.windows.find((window) => window.id === id) ?? null;
@@ -58,6 +61,9 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autostart, setAutostart] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateStatus | null>(null);
+  const [updateBusy, setUpdateBusy] = useState<UpdateBusy>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -70,10 +76,41 @@ export default function App() {
     }
   }, []);
 
+  const checkForUpdate = useCallback(async (showError = false) => {
+    setUpdateBusy("checking");
+    try {
+      const status = await bridgeApi.checkForUpdate();
+      setAppUpdate(status);
+      setUpdateError(null);
+    } catch (cause) {
+      const message = String(cause);
+      setUpdateError(message);
+      if (showError) setError(message);
+    } finally {
+      setUpdateBusy(null);
+    }
+  }, []);
+
+  const installUpdate = useCallback(async () => {
+    setUpdateBusy("installing");
+    setUpdateError(null);
+    try {
+      await bridgeApi.installUpdate();
+    } catch (cause) {
+      const message = String(cause);
+      setUpdateError(message);
+      setError(message);
+      setUpdateBusy(null);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
     void isEnabled().then(setAutostart).catch(() => setAutostart(false));
-  }, [load]);
+    void checkForUpdate(false);
+    const interval = window.setInterval(() => void checkForUpdate(false), UPDATE_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [load, checkForUpdate]);
 
   const accounts = snapshot?.accounts ?? [];
   const selected = accounts.find((account) => account.id === selectedId) ?? null;
@@ -158,7 +195,15 @@ export default function App() {
       }} busy={busy === "regenerate-token"} />;
     }
     if (section === "settings") {
-      return <SettingsView autostart={autostart} onToggleAutostart={toggleAutostart} />;
+      return <SettingsView
+        autostart={autostart}
+        onToggleAutostart={toggleAutostart}
+        update={appUpdate}
+        updateBusy={updateBusy}
+        updateError={updateError}
+        onCheckForUpdate={() => void checkForUpdate(true)}
+        onInstallUpdate={() => void installUpdate()}
+      />;
     }
     return (
       <AccountsView
@@ -176,7 +221,7 @@ export default function App() {
         busy={busy}
       />
     );
-  }, [section, snapshot?.bridge, busy, autostart, accounts, selected, selectedState, healthy, weeklyLow, sessionLow]);
+  }, [section, snapshot?.bridge, busy, autostart, accounts, selected, selectedState, healthy, weeklyLow, sessionLow, appUpdate, updateBusy, updateError, checkForUpdate, installUpdate]);
 
   return (
     <div className="app-shell">
@@ -207,6 +252,12 @@ export default function App() {
 
       <main className="main-stage">
         {error ? <div className="global-error"><span>{error}</span><button onClick={() => setError(null)}>Dismiss</button></div> : null}
+        {appUpdate?.available ? (
+          <div className="update-banner">
+            <div><RefreshIcon /><span><strong>Version {appUpdate.availableVersion} is available</strong><small>The signed update is ready to download from GitHub Releases.</small></span></div>
+            <button className="button primary" disabled={updateBusy === "installing"} onClick={() => void installUpdate()}>{updateBusy === "installing" ? "Installing…" : "Restart and update"}</button>
+          </div>
+        ) : null}
         {snapshot ? content : <div className="loading-screen"><span className="spinner" />Loading bridge…</div>}
       </main>
 
@@ -334,16 +385,36 @@ function IntegrationView({ bridge, onRegenerate, busy }: { bridge: BridgeInfo | 
   );
 }
 
-function SettingsView({ autostart, onToggleAutostart }: { autostart: boolean; onToggleAutostart: () => void }) {
+function SettingsView({
+  autostart,
+  onToggleAutostart,
+  update,
+  updateBusy,
+  updateError,
+  onCheckForUpdate,
+  onInstallUpdate,
+}: {
+  autostart: boolean;
+  onToggleAutostart: () => void;
+  update: AppUpdateStatus | null;
+  updateBusy: UpdateBusy;
+  updateError: string | null;
+  onCheckForUpdate: () => void;
+  onInstallUpdate: () => void;
+}) {
   return (
     <div className="content-scroll narrow-content">
       <header className="page-header"><div><span className="eyebrow">Application</span><h1>Settings</h1><p>Control how the bridge behaves on this computer.</p></div></header>
       <section className="settings-card">
         <div className="settings-row"><div><strong>Start at login</strong><small>Keep usage available to Paseo after signing in.</small></div><button className={`toggle ${autostart ? "on" : ""}`} onClick={onToggleAutostart} aria-pressed={autostart}><span /></button></div>
+        <div className="settings-row"><div><strong>Automatic updates</strong><small>Checks GitHub Releases at startup and every six hours.</small></div>{update?.available ? <button className="button primary" disabled={updateBusy !== null} onClick={onInstallUpdate}>{updateBusy === "installing" ? "Installing…" : `Install v${update.availableVersion}`}</button> : <button className="button ghost" disabled={updateBusy !== null} onClick={onCheckForUpdate}>{updateBusy === "checking" ? "Checking…" : "Check now"}</button>}</div>
+        <div className="settings-row"><div><strong>Installed version</strong><small>{update?.available ? `Version ${update.availableVersion} is available.` : "The app installs only signed update packages."}</small></div><span className="setting-value mono">v{update?.currentVersion ?? "0.1.1"}</span></div>
         <div className="settings-row"><div><strong>Credential storage</strong><small>Windows Credential Manager or macOS Keychain.</small></div><span className="setting-value"><ShieldIcon />Native</span></div>
         <div className="settings-row"><div><strong>Usage cache</strong><small>Last-known-good results remain visible during transient failures.</small></div><span className="setting-value">5 minutes</span></div>
         <div className="settings-row"><div><strong>Primary endpoint</strong><small>No secondary or probe fallback is used.</small></div><span className="setting-value mono">/backend-api/wham/usage</span></div>
       </section>
+      {update?.available && update.body ? <section className="update-notes"><strong>What changed in v{update.availableVersion}</strong><p>{update.body}</p>{update.date ? <small>Published {formatTime(update.date)}</small> : null}</section> : null}
+      {updateError ? <div className="error-panel settings-update-error">{updateError}</div> : null}
       <section className="notice-card"><ShieldIcon /><div><strong>Independent account storage</strong><p>This application owns its account credentials independently and does not read them from other developer tools.</p></div></section>
     </div>
   );
