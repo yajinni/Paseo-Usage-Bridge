@@ -13,11 +13,12 @@ A standalone Windows and macOS desktop app for authenticating multiple OpenAI ac
 - Retains last-known-good usage and marks it stale during transient failures.
 - Refreshes OAuth tokens under a per-account lock.
 - Exposes a bearer-protected loopback API at `http://127.0.0.1:47831/v1/paseo-usage`.
+- Checks GitHub Releases for signed updates at startup and every six hours.
 - Runs from one installer; end users do not need Node.js, Rust, Python, Docker, or a separate CLI.
 
 ## Current status
 
-This repository contains the first working implementation scaffold and UI. The React type-check and production build have been validated locally. GitHub Actions validates the frontend and performs Rust checks on Windows and macOS. Installer builds are available through the manual `Build desktop installers` workflow.
+This repository contains the first working implementation scaffold and UI. The React type-check and production build have been validated locally. GitHub Actions validates the frontend and performs Rust checks on Windows and macOS. Installer and updater builds are available through the manual `Publish desktop release` workflow.
 
 OpenAI does not currently document a public quota API or third-party desktop OAuth registration flow for this use case. The app therefore uses the OAuth client and internal usage endpoint used by Codex clients. Those pieces are intentionally isolated so they can be updated without changing the interface or Paseo integration contract.
 
@@ -29,6 +30,8 @@ OpenAI does not currently document a public quota API or third-party desktop OAu
 - The local API binds only to `127.0.0.1`.
 - The local API requires a random bearer token stored in the native credential store.
 - The local API never returns access tokens, refresh tokens, ID tokens, or raw OpenAI responses.
+- Application updates must pass Tauri signature verification before installation.
+- The updater private key is stored only as a GitHub Actions repository secret.
 - There is no fallback usage endpoint.
 
 ## Development
@@ -70,6 +73,25 @@ npm run tauri:build
 ```
 
 Tauri generates the platform-appropriate Windows or macOS bundle under `src-tauri/target/release/bundle`.
+
+## Releases and automatic updates
+
+The `Publish desktop release` workflow builds Windows, macOS Apple Silicon, and macOS Intel packages. It also uploads signed updater artifacts and a `latest.json` manifest to the GitHub Release.
+
+Before running the first updater-enabled release, configure this repository secret:
+
+- `TAURI_SIGNING_PRIVATE_KEY`: the complete contents of the updater private-key file.
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: optional; leave unset because the current key has no password.
+
+Never commit or share the private key. Keep a secure backup: losing it prevents installed copies from accepting future updates.
+
+Every release must use a newer semantic version in all three locations:
+
+- `package.json`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
+
+Version `0.1.1` is the first updater-enabled build. Existing `0.1.0` installations require one manual installation of `0.1.1`; later versions can be installed from inside the app.
 
 ## Local API
 
