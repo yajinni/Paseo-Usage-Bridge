@@ -36,17 +36,33 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm install
+      - name: Verify updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Repository secret TAURI_SIGNING_PRIVATE_KEY is required."
+            exit 1
+          fi
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: Paseo Usage Bridge v__VERSION__
           releaseBody: |
             Download the Windows installer or the macOS build for your processor from the assets below.
 
-            These builds are not yet backed by paid platform signing certificates. Windows and macOS may display an unverified-publisher warning. The macOS builds use an ad-hoc signature so Apple Silicon downloads are launchable after approval in Privacy & Security.
+            This release includes signed updater packages and `latest.json` for automatic in-app updates.
+
+            These builds are not yet backed by paid platform code-signing certificates. Windows and macOS may display an unverified-publisher warning. The macOS builds use an ad-hoc signature so Apple Silicon downloads are launchable after approval in Privacy & Security.
           releaseDraft: false
           prerelease: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
