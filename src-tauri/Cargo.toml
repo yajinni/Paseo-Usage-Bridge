@@ -1,6 +1,6 @@
 [package]
 name = "paseo-usage-bridge"
-version = "0.2.8"
+version = "0.2.9"
 description = "Standalone multi-provider AI subscription usage monitor and optional Paseo bridge"
 authors = ["Paseo Usage Bridge contributors"]
 edition = "2021"

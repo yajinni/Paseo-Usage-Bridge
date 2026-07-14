@@ -1,5 +1,6 @@
 :root {
   --sidebar-small-text-size: 12px;
+  --sidebar-account-detail-text-size: 13px;
 }
 
 .app-shell {
@@ -29,15 +30,23 @@
   padding: 11px;
   cursor: grab;
   user-select: none;
+  -webkit-user-drag: none;
 }
 
-.account-row:active {
+.account-row:active,
+.account-row.dragging {
   cursor: grabbing;
 }
 
 .account-row.dragging {
   opacity: .42;
   transform: scale(.985);
+}
+
+.account-row-shell.drop-target .account-row {
+  background: #242b27;
+  border-color: rgba(159, 103, 255, .68);
+  box-shadow: inset 0 0 0 1px rgba(159, 103, 255, .22);
 }
 
 .account-row-copy {
@@ -48,6 +57,14 @@
 .account-row-copy strong {
   font-size: 14px;
   line-height: 1.35;
+}
+
+.account-row-copy small,
+.account-row-meta strong,
+.account-row-meta small {
+  font-size: var(--sidebar-account-detail-text-size) !important;
+  line-height: 1.35;
+  color: var(--text);
 }
 
 .account-row-copy small {
@@ -148,14 +165,17 @@
 
 .account-window-stat strong,
 .account-window-stat small {
-  color: var(--muted);
-  font-weight: 650;
+  color: var(--text);
   margin: 0;
 }
 
 .account-window-stat strong {
-  color: var(--text);
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+
+.account-window-stat small {
+  font-weight: 750;
 }
 
 .account-row-actions {

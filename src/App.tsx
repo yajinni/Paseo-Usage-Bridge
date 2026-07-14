@@ -196,12 +196,11 @@ export default function App() {
     if (!snapshot || sourceAccountId === targetAccountId || busy) return;
     const previousAccounts = snapshot.accounts;
     const sourceIndex = previousAccounts.findIndex((account) => account.id === sourceAccountId);
-    if (sourceIndex < 0) return;
+    const targetIndex = previousAccounts.findIndex((account) => account.id === targetAccountId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
 
     const reordered = [...previousAccounts];
     const [moved] = reordered.splice(sourceIndex, 1);
-    const targetIndex = reordered.findIndex((account) => account.id === targetAccountId);
-    if (targetIndex < 0) return;
     reordered.splice(targetIndex, 0, moved);
 
     setSnapshot({ ...snapshot, accounts: reordered });
@@ -445,7 +444,9 @@ function IntegrationView({ bridge, onRegenerate, busy }: { bridge: BridgeInfo | 
         <div className="settings-row"><div><strong>Bearer token</strong><small>Required for every usage request.</small></div><div className="copy-value secret"><code>{bridge?.token ?? "—"}</code><button className="icon-button" onClick={() => bridge && void copy(bridge.token)}><CopyIcon /></button></div></div>
         <div className="settings-row"><div><strong>Rotate token</strong><small>Existing integrations stop working until updated.</small></div><button className="button ghost" onClick={onRegenerate} disabled={busy}>{busy ? "Rotating…" : "Regenerate"}</button></div>
       </section>
-      <section className="code-card"><div className="code-card-heading"><strong>Environment configuration</strong><button className="icon-button" onClick={() => bridge && void copy(`PASEO_EXTERNAL_PROVIDER_USAGE_URL=${bridge.endpoint}\nPASEO_EXTERNAL_PROVIDER_USAGE_TOKEN=${bridge.token}`)}><CopyIcon /></button></div><pre>{bridge ? `PASEO_EXTERNAL_PROVIDER_USAGE_URL=${bridge.endpoint}\nPASEO_EXTERNAL_PROVIDER_USAGE_TOKEN=${bridge.token}` : "Bridge is starting…"}</pre></section>
+      <section className="code-card"><div className="code-card-heading"><strong>Environment configuration</strong><button className="icon-button" onClick={() => bridge && void copy(`PASEO_EXTERNAL_PROVIDER_USAGE_URL=${bridge.endpoint}
+PASEO_EXTERNAL_PROVIDER_USAGE_TOKEN=${bridge.token}`)}><CopyIcon /></button></div><pre>{bridge ? `PASEO_EXTERNAL_PROVIDER_USAGE_URL=${bridge.endpoint}
+PASEO_EXTERNAL_PROVIDER_USAGE_TOKEN=${bridge.token}` : "Bridge is starting…"}</pre></section>
       {bridge?.error ? <div className="error-panel">{bridge.error}</div> : null}
     </div>
   );

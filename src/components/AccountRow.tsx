@@ -1,7 +1,19 @@
-import type { DragEvent, KeyboardEvent } from "react";
+import { useRef, useState } from "react";
+import type { KeyboardEvent, PointerEvent } from "react";
 import type { Account, Provider, UsageWindow } from "../types";
 import { ChevronIcon, EditIcon, LinkIcon, RefreshIcon, SettingsIcon, TrashIcon } from "../icons";
 import { ProviderIcon } from "./ProviderIcon";
+
+const DRAG_START_DISTANCE_PX = 6;
+
+type PointerDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  started: boolean;
+  targetAccountId: string | null;
+  targetElement: HTMLElement | null;
+};
 
 function providerName(provider: Provider): string {
   switch (provider) {
@@ -40,6 +52,10 @@ function RemainingStat({ label, value }: { label: string; value: number | null }
   );
 }
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest("button, a, input, select, textarea, [contenteditable='true']"));
+}
+
 export function AccountRow({
   account,
   selected,
@@ -69,6 +85,9 @@ export function AccountRow({
   const refreshBusy = busy === `refresh:${account.id}`;
   const renameBusy = busy === `rename:${account.id}`;
   const removeBusy = busy === `remove:${account.id}`;
+  const pointerDrag = useRef<PointerDragState | null>(null);
+  const suppressClick = useRef(false);
+  const [pointerDragging, setPointerDragging] = useState(false);
 
   const activate = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -77,40 +96,103 @@ export function AccountRow({
     }
   };
 
-  const startDrag = (event: DragEvent<HTMLDivElement>) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("application/x-paseo-account", account.id);
-    event.dataTransfer.setData("text/plain", account.id);
-    event.currentTarget.classList.add("dragging");
+  const clearDropTarget = () => {
+    const drag = pointerDrag.current;
+    if (!drag) return;
+    drag.targetElement?.classList.remove("drop-target");
+    drag.targetElement = null;
+    drag.targetAccountId = null;
   };
 
-  const finishDrag = (event: DragEvent<HTMLDivElement>) => {
-    event.currentTarget.classList.remove("dragging");
+  const startPointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (busy != null || event.button !== 0 || isInteractiveTarget(event.target)) return;
+
+    pointerDrag.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+      targetAccountId: null,
+      targetElement: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const dropAccount = (event: DragEvent<HTMLDivElement>) => {
+  const updatePointerDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (!drag.started) {
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (distance < DRAG_START_DISTANCE_PX) return;
+      drag.started = true;
+      setPointerDragging(true);
+    }
+
     event.preventDefault();
-    const sourceAccountId = event.dataTransfer.getData("application/x-paseo-account") || event.dataTransfer.getData("text/plain");
-    if (sourceAccountId && sourceAccountId !== account.id) onMove(sourceAccountId, account.id);
+    const targetElement = document.elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>(".account-row-shell[data-account-id]") ?? null;
+    const targetAccountId = targetElement?.dataset.accountId ?? null;
+
+    if (targetAccountId === drag.targetAccountId) return;
+
+    clearDropTarget();
+    if (targetElement && targetAccountId && targetAccountId !== account.id) {
+      targetElement.classList.add("drop-target");
+      drag.targetElement = targetElement;
+      drag.targetAccountId = targetAccountId;
+    }
+  };
+
+  const finishPointerDrag = (event: PointerEvent<HTMLDivElement>, commit: boolean) => {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const targetAccountId = commit && drag.started ? drag.targetAccountId : null;
+    const didDrag = drag.started;
+    clearDropTarget();
+    pointerDrag.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (!didDrag) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    setPointerDragging(false);
+    suppressClick.current = true;
+    window.setTimeout(() => {
+      suppressClick.current = false;
+    }, 0);
+
+    if (targetAccountId && targetAccountId !== account.id) {
+      onMove(account.id, targetAccountId);
+    }
   };
 
   return (
-    <div className={`account-row-shell ${selected ? "expanded" : ""}`}>
+    <div className={`account-row-shell ${selected ? "expanded" : ""}`} data-account-id={account.id}>
       <div
-        className={`account-row ${selected ? "selected" : ""}`}
+        className={`account-row ${selected ? "selected" : ""}${pointerDragging ? " dragging" : ""}`}
         role="button"
         tabIndex={0}
         aria-expanded={selected}
-        draggable={busy == null}
-        onClick={onSelect}
-        onKeyDown={activate}
-        onDragStart={startDrag}
-        onDragEnd={finishDrag}
-        onDragOver={(event) => {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "move";
+        onClick={(event) => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          onSelect();
         }}
-        onDrop={dropAccount}
+        onKeyDown={activate}
+        onPointerDown={startPointerDrag}
+        onPointerMove={updatePointerDrag}
+        onPointerUp={(event) => finishPointerDrag(event, true)}
+        onPointerCancel={(event) => finishPointerDrag(event, false)}
       >
         <span className="account-provider-stack">
           <span className={`account-provider-icon state-${state}`}><ProviderIcon provider={account.provider} /></span>
