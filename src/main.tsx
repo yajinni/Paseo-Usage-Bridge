@@ -6,6 +6,7 @@ import "./updater.css";
 import "./provider.css";
 import "./readability.css";
 import "./dashboard-layout.css";
+import "./sidebar-controls.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
