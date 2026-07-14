@@ -19,3 +19,4 @@ export const TrashIcon = (props: IconProps) => <Base {...props}><path d="M3 6h18
 export const EditIcon = (props: IconProps) => <Base {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></Base>;
 export const ShieldIcon = (props: IconProps) => <Base {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></Base>;
 export const ChevronIcon = (props: IconProps) => <Base {...props}><path d="m9 18 6-6-6-6"/></Base>;
+export const BellIcon = (props: IconProps) => <Base {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></Base>;

@@ -5,6 +5,7 @@ use crate::{
     store::{load_provider_secret, save_provider_secret},
 };
 use std::sync::Arc;
+use tauri_plugin_notification::NotificationExt;
 
 pub async fn refresh_account(
     app: Arc<AppState>,
@@ -78,7 +79,8 @@ fn save_success(
         );
     }
     let fetched_at = now_rfc3339();
-    app.store
+    let account = app
+        .store
         .mutate(account_id, |account| {
             account.plan = usage.plan.clone().or_else(|| account.plan.clone());
             account.email = usage.email.clone().or_else(|| account.email.clone());
@@ -102,7 +104,43 @@ fn save_success(
             account.last_error = None;
             account.auth_required = false;
         })
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    emit_alerts_for_account(app, &account);
+    Ok(account)
+}
+
+pub fn emit_alerts_for_account(app: &AppState, account: &Account) {
+    let Ok(notifications) = app.alerts.evaluate(account) else {
+        return;
+    };
+    if notifications.is_empty() {
+        return;
+    }
+    let app_handle = app.app_handle.read().clone();
+    let Some(app_handle) = app_handle else {
+        return;
+    };
+
+    for notification in notifications {
+        let title = format!(
+            "{} {} limit alert",
+            account.provider.display_name(),
+            notification.window_label
+        );
+        let body = format!(
+            "{} has {}% remaining in the {} window. Your alert threshold is {}%.",
+            account.label,
+            notification.remaining_percent,
+            notification.window_label,
+            notification.threshold_percent
+        );
+        let _ = app_handle
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show();
+    }
 }
 
 fn save_failure(
