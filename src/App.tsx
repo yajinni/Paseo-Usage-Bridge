@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { bridgeApi } from "./api";
+import { AccountAlertModal } from "./components/AccountAlertModal";
 import { AccountRow } from "./components/AccountRow";
 import { AddAccountModal } from "./components/AddAccountModal";
 import { UsageBar } from "./components/UsageBar";
@@ -98,6 +99,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [section, setSection] = useState<Section>("accounts");
   const [addOpen, setAddOpen] = useState(false);
+  const [alertAccount, setAlertAccount] = useState<Account | null>(null);
   const [loginLabel, setLoginLabel] = useState("");
   const [loginProvider, setLoginProvider] = useState<Provider | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
@@ -190,6 +192,31 @@ export default function App() {
     }
   };
 
+  const moveAccount = async (sourceAccountId: string, targetAccountId: string) => {
+    if (!snapshot || sourceAccountId === targetAccountId || busy) return;
+    const previousAccounts = snapshot.accounts;
+    const sourceIndex = previousAccounts.findIndex((account) => account.id === sourceAccountId);
+    if (sourceIndex < 0) return;
+
+    const reordered = [...previousAccounts];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    const targetIndex = reordered.findIndex((account) => account.id === targetAccountId);
+    if (targetIndex < 0) return;
+    reordered.splice(targetIndex, 0, moved);
+
+    setSnapshot({ ...snapshot, accounts: reordered });
+    setBusy("reorder-accounts");
+    try {
+      const saved = await bridgeApi.reorderAccounts(reordered.map((account) => account.id));
+      setSnapshot((current) => current ? { ...current, accounts: saved } : current);
+    } catch (cause) {
+      setSnapshot((current) => current ? { ...current, accounts: previousAccounts } : current);
+      setError(String(cause));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const rename = async (account: Account) => {
     const label = window.prompt("Account label", account.label)?.trim();
     if (!label || label === account.label) return;
@@ -209,6 +236,7 @@ export default function App() {
     setBusy(`remove:${account.id}`);
     try {
       await bridgeApi.removeAccount(account.id);
+      if (alertAccount?.id === account.id) setAlertAccount(null);
       await load();
     } catch (cause) {
       setError(String(cause));
@@ -296,6 +324,8 @@ export default function App() {
               onReconnect={() => openAdd(account)}
               onRename={() => void rename(account)}
               onRemove={() => void remove(account)}
+              onSettings={() => setAlertAccount(account)}
+              onMove={(sourceAccountId, targetAccountId) => void moveAccount(sourceAccountId, targetAccountId)}
             />
           )) : <button className="empty-account" onClick={() => openAdd()}><PlusIcon /><span>Add your first account</span></button>}
         </div>
@@ -326,6 +356,14 @@ export default function App() {
           setAddOpen(false);
           setSelectedId(account.id);
           try { await bridgeApi.refreshAccount(account.id); } catch { /* cached or newly connected account remains available */ }
+          await load();
+        }}
+      />
+      <AccountAlertModal
+        account={alertAccount}
+        onClose={() => setAlertAccount(null)}
+        onSaved={async () => {
+          setAlertAccount(null);
           await load();
         }}
       />
