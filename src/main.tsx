@@ -5,6 +5,7 @@ import "./styles.css";
 import "./updater.css";
 import "./provider.css";
 import "./readability.css";
+import "./dashboard-layout.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
