@@ -25,6 +25,72 @@ select.text-input option {
   margin-top: 14px;
 }
 
+.optional-label {
+  margin-left: 5px;
+  color: var(--muted-2);
+  font-size: .9em;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.guided-login-card {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid rgba(139, 92, 246, .35);
+  border-radius: 12px;
+  background: rgba(98, 62, 164, .12);
+}
+
+.guided-login-card strong {
+  display: block;
+  font-size: 13px;
+}
+
+.guided-login-card ol {
+  margin: 10px 0 12px;
+  padding-left: 21px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.guided-login-card li + li {
+  margin-top: 3px;
+}
+
+.guided-login-card li strong {
+  display: inline;
+  font-size: inherit;
+}
+
+.guided-login-card small {
+  display: block;
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.advanced-connection-toggle {
+  display: inline-flex;
+  margin-top: 11px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-2, #b99aff);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.advanced-connection-toggle:hover {
+  text-decoration: underline;
+}
+
+.manual-connection-fields {
+  margin-top: 4px;
+}
+
 .secret-input {
   min-height: 80px;
   padding-top: 10px;
@@ -36,7 +102,7 @@ select.text-input option {
 .credential-note {
   margin-top: 9px;
   color: var(--muted-2);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
