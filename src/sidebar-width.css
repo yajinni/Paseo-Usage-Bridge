@@ -1,0 +1,13 @@
+.app-shell {
+  grid-template-columns: 480px minmax(0, 1fr);
+}
+
+.account-row {
+  grid-template-columns: 44px minmax(0, 1fr) 96px 16px;
+}
+
+@media (max-width: 1220px) {
+  .app-shell {
+    grid-template-columns: 442px minmax(0, 1fr);
+  }
+}
