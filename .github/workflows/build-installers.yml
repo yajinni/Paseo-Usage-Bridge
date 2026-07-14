@@ -36,20 +36,52 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm install
-      - name: Verify updater signing key
+      - name: Prepare and verify updater signing key
         shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PRIVATE_KEY_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "Repository secret TAURI_SIGNING_PRIVATE_KEY is required."
-            exit 1
-          fi
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          raw_key = os.environ.get("UPDATER_PRIVATE_KEY_SECRET", "")
+          normalized_key = "".join(raw_key.split())
+          expected_sha256 = "943b0844c4516b5c70b00fdc6b9607024bb493d83f46a821f11b115f654f5c8b"
+
+          if not normalized_key:
+              raise SystemExit("Repository secret TAURI_SIGNING_PRIVATE_KEY is required.")
+
+          actual_sha256 = hashlib.sha256(normalized_key.encode("utf-8")).hexdigest()
+          if actual_sha256 != expected_sha256:
+              raise SystemExit(
+                  "TAURI_SIGNING_PRIVATE_KEY does not match the backed-up Paseo updater key. "
+                  "Re-save the exact contents of Paseo-Usage-Bridge-updater-private-key.txt."
+              )
+
+          key_path = Path(os.environ["RUNNER_TEMP"]) / "paseo-usage-bridge-updater.key"
+          key_path.write_text(normalized_key, encoding="utf-8", newline="")
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as github_env:
+              github_env.write(f"TAURI_SIGNING_PRIVATE_KEY={key_path}\n")
+
+          print("Updater signing key matches the expected passwordless key fingerprint.")
+          PY
+      - name: Test updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          printf 'Paseo Usage Bridge updater signing preflight\n' > "$RUNNER_TEMP/updater-signing-preflight.txt"
+          npx tauri signer sign \
+            --private-key-path "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$RUNNER_TEMP/updater-signing-preflight.txt"
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
