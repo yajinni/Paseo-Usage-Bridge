@@ -36,21 +36,38 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm install
-      - name: Verify updater signing key
-        shell: bash
+      - name: Normalize and verify updater signing key
+        shell: python
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RAW_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "Repository secret TAURI_SIGNING_PRIVATE_KEY is required."
-            exit 1
-          fi
+          import base64
+          import os
+          import sys
+
+          raw_key = os.environ.get("RAW_TAURI_SIGNING_PRIVATE_KEY", "")
+          normalized_key = "".join(raw_key.lstrip("\ufeff").split())
+
+          if not normalized_key:
+              sys.exit("Repository secret TAURI_SIGNING_PRIVATE_KEY is required.")
+
+          try:
+              decoded = base64.b64decode(normalized_key, validate=True).decode("utf-8")
+          except Exception as error:
+              sys.exit(f"TAURI_SIGNING_PRIVATE_KEY is not a valid Tauri Base64 private key: {error}")
+
+          if "secret key" not in decoded.lower():
+              sys.exit("TAURI_SIGNING_PRIVATE_KEY does not contain a Tauri updater private key.")
+
+          print(f"::add-mask::{normalized_key}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env_file:
+              env_file.write(f"TAURI_SIGNING_PRIVATE_KEY={normalized_key}\n")
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: v__VERSION__
           releaseName: Paseo Usage Bridge v__VERSION__
