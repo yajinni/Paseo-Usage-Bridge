@@ -37,6 +37,12 @@ export interface Account {
   authRequired: boolean;
 }
 
+export interface UsageAlertSetting {
+  windowId: "five_hour" | "weekly" | "monthly";
+  enabled: boolean;
+  thresholdPercent: number;
+}
+
 export interface BridgeInfo {
   endpoint: string;
   token: string;
