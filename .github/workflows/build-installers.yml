@@ -72,11 +72,29 @@ jobs:
           tagName: v__VERSION__
           releaseName: Paseo Usage Bridge v__VERSION__
           releaseBody: |
-            Download the Windows installer or the macOS build for your processor from the assets below.
+            ## Which download should I use?
 
-            This release includes signed updater packages and `latest.json` for automatic in-app updates.
+            ### Windows
 
-            These builds are not yet backed by paid platform code-signing certificates. Windows and macOS may display an unverified-publisher warning. The macOS builds use an ad-hoc signature so Apple Silicon downloads are launchable after approval in Privacy & Security.
+            **Recommended for most people: download the file ending in `-setup.exe`.**
+
+            - **`-setup.exe` — recommended:** the normal Windows installer. It installs for your Windows account, usually does not require administrator access, and is the installer used by automatic in-app updates.
+            - **`.msi` — administrators and managed computers:** intended for enterprise deployment, system administrators, Group Policy, Intune, or machine-wide installation. It commonly requires administrator access.
+
+            Use one Windows installer type consistently. Installing both the `.exe` and `.msi` can create separate installation contexts.
+
+            ### macOS
+
+            - **Apple Silicon:** choose the macOS download marked `aarch64` or `arm64` for M1, M2, M3, M4, and newer Apple chips.
+            - **Intel Mac:** choose the macOS download marked `x64` or `x86_64`.
+
+            ### Files you normally should not download manually
+
+            Files ending in `.sig`, `.tar.gz`, and `latest.json` support automatic updates. They are not the normal installers.
+
+            ## Security warning
+
+            These builds are not yet backed by paid platform code-signing certificates. Windows and macOS may display an unverified-publisher warning. The macOS builds use an ad-hoc signature, so you may need to approve the app in **System Settings → Privacy & Security** after downloading it.
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
