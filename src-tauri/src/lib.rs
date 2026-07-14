@@ -1,3 +1,5 @@
+mod account_order;
+mod alerts;
 mod bridge_api;
 mod model;
 mod oauth;
@@ -8,6 +10,7 @@ mod store;
 mod usage;
 
 use crate::{
+    alerts::UsageAlertSetting,
     model::{Account, AppUpdateStatus, BridgeInfo, DashboardSnapshot, LoginStart, LoginStatus, Provider},
     state::AppState,
     store::{load_or_create_bridge_token, rotate_bridge_token},
@@ -23,8 +26,9 @@ use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 async fn get_dashboard_snapshot(state: State<'_, Arc<AppState>>) -> Result<DashboardSnapshot, String> {
+    let accounts = state.account_order.apply(state.store.list())?;
     Ok(DashboardSnapshot {
-        accounts: state.store.list(),
+        accounts,
         bridge: bridge_info(state.inner().as_ref()),
     })
 }
@@ -81,6 +85,58 @@ async fn refresh_all(state: State<'_, Arc<AppState>>) -> Result<Vec<Account>, St
 }
 
 #[tauri::command]
+fn reorder_accounts(
+    state: State<'_, Arc<AppState>>,
+    account_ids: Vec<String>,
+) -> Result<Vec<Account>, String> {
+    state.account_order.save(account_ids, state.store.list())
+}
+
+#[tauri::command]
+fn get_account_alerts(
+    state: State<'_, Arc<AppState>>,
+    account_id: String,
+) -> Result<Vec<UsageAlertSetting>, String> {
+    if state.store.get(&account_id).is_none() {
+        return Err("Account not found.".into());
+    }
+    Ok(state.alerts.get(&account_id))
+}
+
+#[tauri::command]
+fn save_account_alerts(
+    state: State<'_, Arc<AppState>>,
+    account_id: String,
+    settings: Vec<UsageAlertSetting>,
+) -> Result<Vec<UsageAlertSetting>, String> {
+    let account = state
+        .store
+        .get(&account_id)
+        .ok_or_else(|| "Account not found.".to_string())?;
+
+    for setting in &settings {
+        let available = account
+            .last_usage
+            .as_ref()
+            .is_some_and(|usage| {
+                usage.windows.iter().any(|window| {
+                    alerts::canonical_window_id(window) == Some(setting.window_id.as_str())
+                })
+            });
+        if !available {
+            return Err(format!(
+                "{} is not available for this account's current plan.",
+                setting.window_id.replace('_', " ")
+            ));
+        }
+    }
+
+    let saved = state.alerts.save(&account_id, settings)?;
+    usage::emit_alerts_for_account(state.inner().as_ref(), &account);
+    Ok(saved)
+}
+
+#[tauri::command]
 fn rename_account(state: State<'_, Arc<AppState>>, account_id: String, label: String) -> Result<Account, String> {
     let label = validate_label(&label)?;
     state
@@ -91,7 +147,10 @@ fn rename_account(state: State<'_, Arc<AppState>>, account_id: String, label: St
 
 #[tauri::command]
 fn remove_account(state: State<'_, Arc<AppState>>, account_id: String) -> Result<(), String> {
-    state.store.remove(&account_id).map_err(|error| error.to_string())
+    state.store.remove(&account_id).map_err(|error| error.to_string())?;
+    state.account_order.remove(&account_id)?;
+    state.alerts.remove(&account_id)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -179,6 +238,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -192,6 +252,7 @@ pub fn run() {
                 AppState::new(data_dir, token)
                     .map_err(std::io::Error::other)?,
             );
+            state.set_app_handle(app.handle().clone());
             app.manage(state.clone());
             tauri::async_runtime::spawn(bridge_api::run(state.clone()));
             tauri::async_runtime::spawn(async move {
@@ -245,6 +306,9 @@ pub fn run() {
             get_login_status,
             refresh_account,
             refresh_all,
+            reorder_accounts,
+            get_account_alerts,
+            save_account_alerts,
             rename_account,
             remove_account,
             regenerate_bridge_token,
