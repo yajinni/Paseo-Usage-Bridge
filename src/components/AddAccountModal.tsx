@@ -27,7 +27,7 @@ export function AddAccountModal({
   onClose: () => void;
   onAdded: (account: Account) => void;
 }) {
-  const [label, setLabel] = useState("");
+  const [label, setLabel] = useState("OpenAI Codex");
   const [provider, setProvider] = useState<Provider>("openai");
   const [workspaceId, setWorkspaceId] = useState("");
   const [authCookie, setAuthCookie] = useState("");
@@ -38,7 +38,7 @@ export function AddAccountModal({
 
   useEffect(() => {
     if (!open) {
-      setLabel("");
+      setLabel("OpenAI Codex");
       setProvider("openai");
       setWorkspaceId("");
       setAuthCookie("");
@@ -47,8 +47,9 @@ export function AddAccountModal({
       setBusy(false);
       setError(null);
     } else {
-      setLabel(initialLabel ?? "");
-      setProvider(initialProvider ?? "openai");
+      const nextProvider = initialProvider ?? "openai";
+      setProvider(nextProvider);
+      setLabel(initialLabel?.trim() || providerName(nextProvider));
       setAdvancedManual(false);
     }
   }, [open, initialLabel, initialProvider]);
@@ -85,7 +86,7 @@ export function AddAccountModal({
     try {
       if (provider === "opencode_go" && advancedManual) {
         const account = await bridgeApi.addOpenCodeGoAccount(
-          label.trim() || "OpenCode Go",
+          label.trim() || providerName(provider),
           workspaceId.trim(),
           authCookie.trim(),
         );
@@ -128,7 +129,9 @@ export function AddAccountModal({
           className="text-input"
           value={provider}
           onChange={(event) => {
-            setProvider(event.target.value as Provider);
+            const nextProvider = event.target.value as Provider;
+            setLabel((current) => !current.trim() || current === providerName(provider) ? providerName(nextProvider) : current);
+            setProvider(nextProvider);
             setAdvancedManual(false);
             setStatus(null);
             setError(null);
@@ -141,9 +144,7 @@ export function AddAccountModal({
           ))}
         </select>
 
-        <label className="field-label field-spaced" htmlFor="account-label">
-          Account label <span className="optional-label">optional</span>
-        </label>
+        <label className="field-label field-spaced" htmlFor="account-label">Account name</label>
         <input
           id="account-label"
           className="text-input"
