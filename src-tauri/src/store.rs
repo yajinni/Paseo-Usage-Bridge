@@ -13,7 +13,8 @@ use thiserror::Error;
 const CREDENTIAL_SERVICE: &str = "paseo-usage-bridge";
 const BRIDGE_TOKEN_USER: &str = "bridge-api-token";
 const CHUNKED_CREDENTIAL_FORMAT: &str = "chunked-v1";
-const CREDENTIAL_CHUNK_UTF16_UNITS: usize = 1800;
+const WINDOWS_CREDENTIAL_BLOB_LIMIT_BYTES: usize = 2560;
+const CREDENTIAL_CHUNK_UTF16_UNITS: usize = 1200;
 const MAX_CREDENTIAL_CHUNKS: usize = 32;
 const CREDENTIAL_GENERATION_LENGTH: usize = 16;
 
@@ -590,7 +591,7 @@ mod tests {
         assert!(chunks.len() > 1);
         assert!(chunks
             .iter()
-            .all(|chunk| chunk.encode_utf16().count() <= CREDENTIAL_CHUNK_UTF16_UNITS));
+            .all(|chunk| chunk.encode_utf16().count() * 2 <= WINDOWS_CREDENTIAL_BLOB_LIMIT_BYTES));
         let joined = chunks.concat();
         let decoded = decode_provider_secret(&joined).unwrap();
         match decoded {
@@ -605,12 +606,16 @@ mod tests {
 
     #[test]
     fn chunk_split_respects_utf16_surrogate_pairs() {
-        let payload = format!("{}{}", "x".repeat(1799), "😀".repeat(5));
+        let payload = format!(
+            "{}{}",
+            "x".repeat(CREDENTIAL_CHUNK_UTF16_UNITS - 1),
+            "😀".repeat(5)
+        );
         let chunks = split_utf16_chunks(&payload, CREDENTIAL_CHUNK_UTF16_UNITS);
         assert_eq!(chunks.concat(), payload);
         assert!(chunks
             .iter()
-            .all(|chunk| chunk.encode_utf16().count() <= CREDENTIAL_CHUNK_UTF16_UNITS));
+            .all(|chunk| chunk.encode_utf16().count() * 2 <= WINDOWS_CREDENTIAL_BLOB_LIMIT_BYTES));
     }
 
     #[test]
