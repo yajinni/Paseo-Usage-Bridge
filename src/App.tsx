@@ -26,6 +26,8 @@ type NextResetSummary = {
 };
 
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const DASHBOARD_SYNC_INTERVAL_MS = 30 * 1000;
+const STARTUP_REFRESH_DELAY_MS = 3 * 1000;
 
 function providerName(provider: Provider): string {
   switch (provider) {
@@ -158,8 +160,24 @@ export default function App() {
     void load();
     void isEnabled().then(setAutostart).catch(() => setAutostart(false));
     void checkForUpdate(false);
-    const interval = window.setInterval(() => void checkForUpdate(false), UPDATE_CHECK_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+
+    const startupRefresh = window.setTimeout(() => void load(), STARTUP_REFRESH_DELAY_MS);
+    const dashboardInterval = window.setInterval(() => void load(), DASHBOARD_SYNC_INTERVAL_MS);
+    const updateInterval = window.setInterval(() => void checkForUpdate(false), UPDATE_CHECK_INTERVAL_MS);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+
+    return () => {
+      window.clearTimeout(startupRefresh);
+      window.clearInterval(dashboardInterval);
+      window.clearInterval(updateInterval);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [load, checkForUpdate]);
 
   const accounts = snapshot?.accounts ?? [];
