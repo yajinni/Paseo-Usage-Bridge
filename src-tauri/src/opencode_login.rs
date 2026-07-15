@@ -24,12 +24,41 @@ use url::Url;
 use uuid::Uuid;
 
 const LOGIN_WINDOW_LABEL: &str = "opencode-go-login";
-const LOGIN_URL: &str = "https://opencode.ai/workspace";
+const LOGIN_URL: &str = "https://opencode.ai/auth";
 const LOGIN_TIMEOUT_MINUTES: i64 = 10;
+const COOKIE_CAPTURE_ATTEMPTS: usize = 30;
+const COOKIE_CAPTURE_RETRY_DELAY_MS: u64 = 500;
 
 const CONNECT_BANNER_SCRIPT: &str = r#"
 (() => {
   if (window.top !== window || window.location.hostname !== 'opencode.ai') return;
+
+  const isGoRoute = () => /^\/workspace\/[^/]+\/go(?:\/|$)/.test(window.location.pathname);
+  let lastHref = window.location.href;
+  let reloadScheduled = false;
+
+  const detectGoNavigation = () => {
+    const currentHref = window.location.href;
+    if (currentHref === lastHref) return;
+    lastHref = currentHref;
+
+    if (!isGoRoute() || reloadScheduled) return;
+    reloadScheduled = true;
+    window.setTimeout(() => window.location.reload(), 50);
+  };
+
+  for (const methodName of ['pushState', 'replaceState']) {
+    const original = window.history[methodName].bind(window.history);
+    window.history[methodName] = function (...args) {
+      const result = original(...args);
+      window.setTimeout(detectGoNavigation, 0);
+      return result;
+    };
+  }
+
+  window.addEventListener('popstate', detectGoNavigation);
+  window.addEventListener('hashchange', detectGoNavigation);
+  window.setInterval(detectGoNavigation, 250);
 
   const installBanner = () => {
     if (!document.body || document.getElementById('paseo-opencode-connect-banner')) return;
@@ -145,22 +174,7 @@ pub async fn start_login(
         let capture_flag = page_capture_started.clone();
 
         std::thread::spawn(move || {
-            std::thread::sleep(StdDuration::from_millis(450));
-            let cookie_url = Url::parse("https://opencode.ai/").expect("valid OpenCode URL");
-            let cookie_result = cookie_window
-                .cookies_for_url(cookie_url)
-                .map_err(|error| format!("Unable to read the OpenCode login session: {error}"))
-                .and_then(|cookies| {
-                    cookies
-                        .into_iter()
-                        .find(|cookie| cookie.name() == "auth")
-                        .map(|cookie| cookie.value().to_string())
-                        .filter(|value| !value.trim().is_empty())
-                        .ok_or_else(|| {
-                            "OpenCode did not provide a usable login session. Sign in and open Go again."
-                                .to_string()
-                        })
-                });
+            let cookie_result = read_auth_cookie_with_retry(&cookie_window);
 
             tauri::async_runtime::spawn(async move {
                 match cookie_result {
@@ -180,7 +194,7 @@ pub async fn start_login(
                         update_waiting_message(
                             &completion_state,
                             &completion_attempt,
-                            error,
+                            format!("{error} Navigate away from Go, then select Go again to retry."),
                         );
                     }
                 }
@@ -322,6 +336,48 @@ async fn complete_login(
     }
 }
 
+fn read_auth_cookie_with_retry(window: &WebviewWindow) -> Result<String, String> {
+    let cookie_url = Url::parse("https://opencode.ai/")
+        .map_err(|error| format!("Unable to prepare the OpenCode cookie request: {error}"))?;
+
+    std::thread::sleep(StdDuration::from_millis(250));
+
+    let mut last_read_error = None;
+    for attempt in 0..COOKIE_CAPTURE_ATTEMPTS {
+        match window.cookies_for_url(cookie_url.clone()) {
+            Ok(cookies) => {
+                if let Some(value) = cookies
+                    .into_iter()
+                    .find(|cookie| cookie.name() == "auth")
+                    .map(|cookie| cookie.value().to_string())
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    return Ok(value);
+                }
+            }
+            Err(error) => {
+                last_read_error = Some(error.to_string());
+            }
+        }
+
+        if attempt + 1 < COOKIE_CAPTURE_ATTEMPTS {
+            std::thread::sleep(StdDuration::from_millis(
+                COOKIE_CAPTURE_RETRY_DELAY_MS,
+            ));
+        }
+    }
+
+    match last_read_error {
+        Some(error) => Err(format!(
+            "Unable to read the OpenCode login session after retrying: {error}."
+        )),
+        None => Err(
+            "OpenCode did not provide a usable login session after retrying. Confirm that sign-in completed."
+                .into(),
+        ),
+    }
+}
+
 fn login_window_size(app: &AppHandle) -> (f64, f64) {
     let Some(main) = app.get_webview_window("main") else {
         return (1150.0, 760.0);
@@ -387,10 +443,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn starts_on_the_opencode_auth_page() {
+        assert_eq!(LOGIN_URL, "https://opencode.ai/auth");
+    }
+
+    #[test]
     fn detects_only_opencode_go_workspace_urls() {
         assert_eq!(
             workspace_id_from_url(
                 &Url::parse("https://opencode.ai/workspace/mystic-patrol-3ls3t/go").unwrap()
+            ),
+            Some("mystic-patrol-3ls3t".into())
+        );
+        assert_eq!(
+            workspace_id_from_url(
+                &Url::parse(
+                    "https://opencode.ai/workspace/mystic-patrol-3ls3t/go/?source=sidebar"
+                )
+                .unwrap()
             ),
             Some("mystic-patrol-3ls3t".into())
         );
